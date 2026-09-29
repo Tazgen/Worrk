@@ -24,6 +24,11 @@ logos/geekay.png output/geekay.png --split-colors
 logos/monkey.png output/monkey.png --knockout-thin-dark 0.014 --split-colors
 logos/beaver.png output/beaver.png
 logos/s2.png output/s2.png --knockout-light 200 --color #C8CDD2
+logos/amethyst.png output/amethyst.png
+logos/horse.png output/horse.png --knockout-dark
+logos/corinthians.png output/corinthians.png --knockout-dark
+logos/cosmico.png output/cosmico.png --knockout-dark
+logos/roc.png output/roc.png
 LIST
 
 # Lettering logos for teams without one: <text> <output> [textlogo.py options]

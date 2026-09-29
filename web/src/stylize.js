@@ -298,18 +298,45 @@ function shadeInto(r, g, b, f, out, o) {
   }
 }
 
+// Mean colour of the most common dark colour bucket, or null if the logo has no dark pixels.
+export function darkCentre(img) {
+  const { w, h, data } = img;
+  const counts = new Map();
+  for (let i = 0; i < w * h; i++) {
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    if (data[i * 4 + 3] <= 128 || (r + g + b) / 3 >= 90) continue;
+    const k = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    const e = counts.get(k) || [0, 0, 0, 0];
+    e[0]++; e[1] += r; e[2] += g; e[3] += b;
+    counts.set(k, e);
+  }
+  let best = null;
+  for (const e of counts.values()) if (!best || e[0] > best[0]) best = e;
+  return best && [best[1] / best[0], best[2] / best[0], best[3] / best[0]];
+}
+
 // Turn parts of a flat logo into holes (dark linework, thin dark strokes, light areas).
 export function knockout(img, { dark = false, thinDark = 0, light = null } = {}) {
   const { w, h } = img;
   const data = new Uint8ClampedArray(img.data);
   if (!dark && !(thinDark > 0) && light == null) return { w, h, data };
-  const isDark = new Uint8Array(w * h), holes = new Uint8Array(w * h);
+  const isDark = new Uint8Array(w * h), darkish = new Uint8Array(w * h), holes = new Uint8Array(w * h);
+  const centre = darkCentre(img);
   for (let i = 0; i < w * h; i++) {
     const op = data[i * 4 + 3] > 128;
-    const lum = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3;
-    isDark[i] = op && lum < 90 ? 1 : 0;
-    if (dark && isDark[i]) holes[i] = 1;
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    const lum = (r + g + b) / 3;
+    // Only the logo's main dark colour counts (its linework/black), not dark shades of
+    // other colours such as shaded letters or a dark purple fill.
+    darkish[i] = op && lum < 90 ? 1 : 0;
+    isDark[i] = darkish[i] && centre && Math.hypot(r - centre[0], g - centre[1], b - centre[2]) < 48 ? 1 : 0;
     if (light != null && op && lum > light) holes[i] = 1;
+  }
+  // Anti-aliased edge pixels are blends, so let the core grow into dark neighbours.
+  const grown = dilate(isDark, w, h, 2);
+  for (let i = 0; i < w * h; i++) {
+    isDark[i] = darkish[i] && grown[i] ? 1 : 0;
+    if (dark && isDark[i]) holes[i] = 1;
   }
   if (thinDark > 0) {
     const r = Math.max(1, Math.round((thinDark * Math.max(w, h)) / 2));

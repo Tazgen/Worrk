@@ -34,7 +34,7 @@ def shade_color(rgb, f):
 def knockout(im, dark=False, thin_dark=0.0, light=None):
     """Turn parts of a flat logo into holes, the way the style treats linework and white areas.
 
-    dark:      every dark pixel becomes a hole (line-art logos).
+    dark:      the logo's main dark colour becomes holes (line-art logos).
     thin_dark: only dark strokes thinner than this fraction of the logo size become holes,
                so thin outlines turn into cut lines while thick dark text/rings stay filled.
     light:     pixels brighter than this (0-255) become holes (white backgrounds, pale stripes).
@@ -44,6 +44,17 @@ def knockout(im, dark=False, thin_dark=0.0, light=None):
     lum = arr[..., :3].astype(float).mean(-1)
     holes = np.zeros(opaque.shape, bool)
     is_dark = opaque & (lum < 90)
+    if is_dark.any():
+        # Only the logo's main dark colour counts (its linework/black), not dark shades of
+        # other colours such as shaded letters or a dark purple fill.
+        rgb = arr[..., :3].astype(int)
+        q = rgb[is_dark] // 16
+        keys, counts = np.unique(q[:, 0] * 256 + q[:, 1] * 16 + q[:, 2], return_counts=True)
+        mode = keys[counts.argmax()]
+        centre = rgb[is_dark][(q[:, 0] * 256 + q[:, 1] * 16 + q[:, 2]) == mode].mean(0)
+        core = is_dark & (np.sqrt(((rgb - centre) ** 2).sum(-1)) < 48)
+        # Anti-aliased edge pixels are blends, so let the core grow into dark neighbours.
+        is_dark &= ndimage.binary_dilation(core, iterations=2)
     if dark:
         holes |= is_dark
     if thin_dark > 0:
