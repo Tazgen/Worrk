@@ -19,4 +19,9 @@ logos/dignitas.png output/dignitas.png --knockout-dark
 logos/geng.png output/geng.png
 logos/kru.png output/kru.png
 logos/pink_s.png output/pink_s.png
+logos/dignitas_pastel.png output/dignitas_pastel.png --knockout-dark
+logos/geekay.png output/geekay.png --split-colors
+logos/monkey.png output/monkey.png --knockout-thin-dark 0.014 --split-colors
+logos/beaver.png output/beaver.png
+logos/s2.png output/s2.png --knockout-light 200 --color #C8CDD2
 LIST
