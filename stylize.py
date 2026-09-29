@@ -16,7 +16,7 @@ def hex_rgb(s):
     return np.array([int(s[i:i + 2], 16) for i in (0, 2, 4)], float)
 
 
-def stylize(src, size=1500, color=None, seed=0):
+def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30):
     rng = np.random.default_rng(seed)
     im = src.convert("RGBA")
 
@@ -62,17 +62,20 @@ def stylize(src, size=1500, color=None, seed=0):
     col = col * lum[..., None] + 90 * specks[..., None] * (rgb / 255)
 
     # Bevel: chamfer band inside the edge, lit from the top-left.
-    chamfer = 13 * px
+    chamfer = bevel * px
     gy, gx = np.gradient(ndimage.gaussian_filter(d_in, 1.5 * px))
     norm = np.hypot(gx, gy) + 1e-6
     # Gradient points inward; the face normal points outward.
     light = (-gx / norm) * -0.6 + (-gy / norm) * -0.8
     band = np.clip((chamfer - d_in) / (1.0 * px) + 0.5, 0, 1)  # crisp inner edge
-    shade = 1 + 0.16 * light * band
-    # Thin crease where the chamfer meets the flat face: dark then light.
-    crease_d = np.exp(-((d_in - chamfer) / (1.0 * px)) ** 2)
-    crease_l = np.exp(-((d_in - chamfer - 1.8 * px) / (1.0 * px)) ** 2)
-    shade *= 1 - 0.14 * crease_d + 0.10 * crease_l * (light > 0)
+    # Chamfer faces brighten slightly towards the outer edge, like a real slope catching light.
+    slope = 1 + 0.25 * np.clip(1 - d_in / chamfer, 0, 1)
+    # Shadowed faces get less contrast than lit ones so they stay clean rather than muddy.
+    face = np.where(light > 0, light, 0.7 * light)
+    shade = 1 + bevel_strength * face * band * slope
+    # Crease where the chamfer meets the flat face; it contrasts with the face it borders.
+    crease = np.exp(-((d_in - chamfer) / (1.3 * px)) ** 2)
+    shade *= 1 - 0.22 * light * crease - 0.06 * crease
     col *= shade[..., None]
 
     # Dark outline centred on the edge.
@@ -94,5 +97,7 @@ if __name__ == "__main__":
     p.add_argument("--size", type=int, default=1500)
     p.add_argument("--color", type=hex_rgb)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--bevel", type=float, default=20, help="bevel width in px at 1500px output")
+    p.add_argument("--bevel-strength", type=float, default=0.30)
     args = p.parse_args()
-    stylize(Image.open(args.input), args.size, args.color, args.seed).save(args.output)
+    stylize(Image.open(args.input), args.size, args.color, args.seed, args.bevel, args.bevel_strength).save(args.output)
