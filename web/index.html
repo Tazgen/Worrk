@@ -264,7 +264,14 @@ $("export").onclick = async () => {
   cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(r.res.data), r.res.w, r.res.h), 0, 0);
   const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
   const filename = sourceName + "-badge.png";
-  if (!downloads) { $("exportNote").textContent = "Downloads aren't available in this view."; return; }
+  if (!downloads) {
+    // Outside claude.ai (e.g. running locally) a normal browser download works.
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    $("exportNote").textContent = "Saved " + filename;
+    return;
+  }
   try { await downloads.save({ filename, data: blob }); $("exportNote").textContent = "Saved " + filename; }
   catch (err) { $("exportNote").textContent = err?.code === "declined" ? "Download cancelled." : "Couldn't save: " + (err?.message || err); }
 };
