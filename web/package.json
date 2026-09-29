@@ -1,0 +1,6 @@
+{
+  "name": "logo-styler",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "pngjs": "^7.0.0" }
+}

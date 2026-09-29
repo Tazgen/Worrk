@@ -1,0 +1,273 @@
+<title>Badge Forge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: three-column workbench — controls left, large stage centre, output right. */
+:root {
+  --bg: #eef0f2; --panel: #ffffff; --ink: #16191d; --muted: #5d6670; --line: #d5dae0;
+  --accent: #c8a23a; --accent-ink: #1a1405; --stage: #20252b; --danger: #b3261e;
+  --display: "Russo One", "Arial Black", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111418; --panel: #191d22; --ink: #e8ebee; --muted: #98a2ad; --line: #2b3138;
+  --accent: #d9b44a; --accent-ink: #1a1405; --stage: #0b0d10; --danger: #f2877f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #191d22; --ink: #e8ebee; --muted: #98a2ad; --line: #2b3138;
+  --accent: #d9b44a; --accent-ink: #1a1405; --stage: #0b0d10; --danger: #f2877f; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--body); padding-inline: 16px; padding-block: 16px; box-sizing: border-box; }
+h1 { font: 22px/1 var(--display); letter-spacing: .02em; margin: 0; }
+.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.top p { margin: 0; color: var(--muted); }
+.bench { display: grid; grid-template-columns: 280px minmax(0, 1fr) 240px; gap: 14px; min-height: calc(100% - 48px); }
+@media (max-width: 980px) { .bench { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop.over, .drop:focus-visible { border-color: var(--accent); color: var(--ink); outline: none; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 4px; font: 500 12px var(--body); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.row { display: flex; align-items: center; gap: 8px; }
+.row label { flex: 1; }
+input[type=color] { width: 38px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: none; padding: 1px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; gap: 8px; align-items: flex-start; }
+.check input { margin-top: 3px; accent-color: var(--accent); }
+.check small { display: block; color: var(--muted); }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatches button { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; }
+.swatches button:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage { background: var(--stage); border-radius: 10px; position: relative; display: grid; place-items: center; min-height: 460px; overflow: hidden; }
+.stage.light { background: #f4f5f6; }
+.stage.checker { background: repeating-conic-gradient(#cfd3d8 0 25%, #f4f5f6 0 50%) 0 0 / 20px 20px; }
+.stage canvas { max-width: 88%; max-height: 88%; object-fit: contain; }
+.stage .status { position: absolute; left: 12px; bottom: 10px; font: 12px var(--mono); color: #9aa4ae; }
+.stagebar { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 7px; padding: 8px 12px; font: 500 13px var(--body); cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn:disabled { opacity: .55; cursor: progress; }
+.note { color: var(--muted); font-size: 12px; margin: 0; }
+.err { color: var(--danger); font-size: 12px; margin: 0; }
+.orig { background: var(--stage); border-radius: 8px; display: grid; place-items: center; padding: 10px; }
+.orig img { max-height: 140px; }
+@media (prefers-reduced-motion: no-preference) { .btn { transition: filter .15s; } .btn:hover { filter: brightness(1.06); } }
+</style>
+
+<header class="top">
+  <h1>Badge Forge</h1>
+  <p>Upload a flat logo, choose its colours, export the metal badge.</p>
+</header>
+
+<main class="bench">
+  <section class="panel" aria-label="Logo and colours">
+    <div class="group">
+      <span class="label">Logo</span>
+      <div class="drop" id="drop" tabindex="0" role="button">Drop a PNG here, paste, or click to choose<br><small>Transparent PNG or SVG works best</small></div>
+      <input type="file" id="file" accept="image/png,image/webp,image/jpeg,image/svg+xml" hidden>
+      <p class="err" id="fileErr" hidden></p>
+    </div>
+
+    <div class="group">
+      <span class="label">Colour</span>
+      <div class="seg" role="group" aria-label="Colour mode">
+        <button id="modeOriginal" aria-pressed="true">Original</button>
+        <button id="modeOne" aria-pressed="false">One colour</button>
+        <button id="modeTint" aria-pressed="false">Shaded</button>
+      </div>
+      <div class="row" id="colorRow" hidden>
+        <label for="color">Theme colour</label>
+        <input type="color" id="color" value="#ffe400">
+      </div>
+      <div id="detected" class="group" hidden>
+        <span class="note">Found in the logo:</span>
+        <div class="swatches" id="swatches"></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="label">Cut-outs</span>
+      <label class="check"><input type="checkbox" id="koDark"><span>Cut out dark parts<small>Black linework becomes holes</small></span></label>
+      <label class="check"><input type="checkbox" id="koThin"><span>Cut out thin dark lines only<small>Thick dark shapes stay filled</small></span></label>
+      <label class="check"><input type="checkbox" id="koLight"><span>Cut out white parts<small>White and very pale areas become holes</small></span></label>
+      <label class="check"><input type="checkbox" id="split"><span>Lines between colours<small>Each colour becomes its own piece</small></span></label>
+    </div>
+  </section>
+
+  <section aria-label="Preview">
+    <div class="stage" id="stage">
+      <canvas id="out" width="10" height="10" aria-label="Styled logo preview"></canvas>
+      <span class="status" id="status">Loading sample…</span>
+    </div>
+    <div class="stagebar">
+      <button class="btn" id="bgDark" aria-pressed="true">Dark</button>
+      <button class="btn" id="bgLight" aria-pressed="false">Light</button>
+      <button class="btn" id="bgChecker" aria-pressed="false">Transparent</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Style and export">
+    <div class="group">
+      <span class="label">Original</span>
+      <div class="orig"><img id="origImg" alt="Uploaded logo"></div>
+    </div>
+    <div class="group">
+      <span class="label">Style</span>
+      <label for="bevel">Bevel width</label><input type="range" id="bevel" min="6" max="36" value="20">
+      <label for="strength">Bevel contrast</label><input type="range" id="strength" min="0" max="60" value="30">
+      <label for="sheen">Shine bands</label><input type="range" id="sheen" min="0" max="30" value="12">
+      <label for="blend">Blend colours</label><input type="range" id="blend" min="0" max="20" value="0">
+    </div>
+    <div class="group">
+      <span class="label">Export</span>
+      <button class="btn primary" id="export">Download PNG (1500px)</button>
+      <p class="note" id="exportNote">Full quality takes about 10–20 seconds.</p>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const worker = new Worker(new URL("./src/worker.js", import.meta.url), { type: "module" });
+let jobId = 0;
+const pending = new Map();
+worker.onmessage = (e) => { const p = pending.get(e.data.id); if (p) { pending.delete(e.data.id); p(e.data); } };
+const run = (img, options) => new Promise((res) => { const id = ++jobId; pending.set(id, res); worker.postMessage({ id, img, options }); });
+
+let source = null, sourceName = "logo", mode = "original", previewBusy = false, previewAgain = false;
+
+function hexToRgb(h) { return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+function rgbToHex(c) { return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""); }
+
+function options(full) {
+  const o = {
+    bevel: +$("bevel").value, bevelStrength: $("strength").value / 100, sheen: $("sheen").value / 100,
+    blend: $("blend").value / 100, knockoutDark: $("koDark").checked,
+    knockoutThinDark: $("koThin").checked ? 0.014 : 0, knockoutLight: $("koLight").checked ? 185 : null,
+    splitColors: $("split").checked,
+  };
+  if (mode === "one") o.color = hexToRgb($("color").value);
+  if (mode === "tint") o.tint = hexToRgb($("color").value);
+  if (full) { o.size = 1500; o.ss = 2; } else { o.size = 700; o.ss = 1; o.detailScale = 700 / 1500; }
+  return o;
+}
+
+async function preview() {
+  if (!source) return;
+  if (previewBusy) { previewAgain = true; return; }
+  previewBusy = true; $("status").textContent = "Rendering…";
+  const r = await run(source, options(false));
+  previewBusy = false;
+  if (r.error) $("status").textContent = "Error: " + r.error;
+  else { draw(r.res); $("status").textContent = `Preview ${r.res.w}×${r.res.h} · ${(r.ms / 1000).toFixed(1)}s`; }
+  if (previewAgain) { previewAgain = false; preview(); }
+}
+
+function draw(res) {
+  const c = $("out"); c.width = res.w; c.height = res.h;
+  c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(res.data), res.w, res.h), 0, 0);
+}
+
+// Main colours: quantise opaque pixels and keep the biggest clusters.
+function palette(img) {
+  const counts = new Map();
+  for (let i = 0; i < img.w * img.h; i++) {
+    if (img.data[i * 4 + 3] < 200) continue;
+    const k = ((img.data[i * 4] >> 4) << 8) | ((img.data[i * 4 + 1] >> 4) << 4) | (img.data[i * 4 + 2] >> 4);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  const picked = [];
+  for (const [k, n] of [...counts].sort((a, b) => b[1] - a[1])) {
+    if (n < total * 0.01) break;
+    const c = [(k >> 8) * 16 + 8, ((k >> 4) & 15) * 16 + 8, (k & 15) * 16 + 8];
+    if (picked.every((p) => Math.hypot(p.c[0] - c[0], p.c[1] - c[1], p.c[2] - c[2]) > 60)) picked.push({ c, n });
+    if (picked.length === 6) break;
+  }
+  return picked;
+}
+const sat = (c) => (Math.max(...c) - Math.min(...c)) / 255;
+
+function showPalette(p) {
+  const box = $("swatches"); box.textContent = "";
+  for (const { c } of p) {
+    const b = document.createElement("button");
+    b.style.background = rgbToHex(c); b.title = rgbToHex(c); b.setAttribute("aria-label", "Use " + rgbToHex(c));
+    b.onclick = () => { $("color").value = rgbToHex(c); if (mode === "original") setMode("one"); else preview(); };
+    box.append(b);
+  }
+  $("detected").hidden = !p.length;
+  // Auto theme colour: the biggest clearly coloured cluster, else silver.
+  const best = [...p].sort((a, b) => b.n * (0.2 + sat(b.c)) - a.n * (0.2 + sat(a.c)))[0];
+  $("color").value = best && sat(best.c) > 0.25 ? rgbToHex(best.c) : "#d9d9d9";
+}
+
+function setMode(m) {
+  mode = m;
+  for (const [id, v] of [["modeOriginal", "original"], ["modeOne", "one"], ["modeTint", "tint"]]) $(id).setAttribute("aria-pressed", m === v);
+  $("colorRow").hidden = m === "original";
+  preview();
+}
+
+async function loadBlob(blob, name) {
+  $("fileErr").hidden = true;
+  try {
+    const url = URL.createObjectURL(blob);
+    const im = new Image(); im.src = url; await im.decode();
+    let w = im.naturalWidth || 1000, h = im.naturalHeight || 1000;
+    if (blob.type === "image/svg+xml") { const k = 1200 / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d"); ctx.drawImage(im, 0, 0, w, h);
+    source = { w, h, data: ctx.getImageData(0, 0, w, h).data };
+    sourceName = (name || "logo").replace(/\.[^.]+$/, "");
+    $("origImg").src = url;
+    showPalette(palette(source));
+    preview();
+  } catch {
+    $("fileErr").textContent = "That file couldn't be read as an image. Try a PNG, WebP, JPG or SVG.";
+    $("fileErr").hidden = false;
+  }
+}
+
+$("drop").onclick = () => $("file").click();
+$("drop").onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } };
+$("file").onchange = () => { const f = $("file").files[0]; if (f) loadBlob(f, f.name); };
+for (const ev of ["dragenter", "dragover"]) $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); });
+for (const ev of ["dragleave", "drop"]) $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); });
+$("drop").addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) loadBlob(f, f.name); });
+document.addEventListener("paste", (e) => { const f = [...e.clipboardData.files][0]; if (f) loadBlob(f, "pasted"); });
+
+$("modeOriginal").onclick = () => setMode("original");
+$("modeOne").onclick = () => setMode("one");
+$("modeTint").onclick = () => setMode("tint");
+for (const id of ["color", "koDark", "koThin", "koLight", "split"]) $(id).addEventListener("input", preview);
+for (const id of ["bevel", "strength", "sheen", "blend"]) $(id).addEventListener("change", preview);
+
+for (const [id, cls] of [["bgDark", ""], ["bgLight", "light"], ["bgChecker", "checker"]]) $(id).onclick = () => {
+  $("stage").className = "stage " + cls;
+  for (const other of ["bgDark", "bgLight", "bgChecker"]) $(other).setAttribute("aria-pressed", other === id);
+};
+
+let downloads = null;
+window.claude?.use?.("downloads").then((d) => { downloads = d; }).catch(() => {});
+$("export").onclick = async () => {
+  if (!source) return;
+  const btn = $("export"); btn.disabled = true; $("exportNote").textContent = "Rendering full quality…";
+  const r = await run(source, options(true));
+  btn.disabled = false;
+  if (r.error) { $("exportNote").textContent = "Export failed: " + r.error; return; }
+  const cv = document.createElement("canvas"); cv.width = r.res.w; cv.height = r.res.h;
+  cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(r.res.data), r.res.w, r.res.h), 0, 0);
+  const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+  const filename = sourceName + "-badge.png";
+  if (!downloads) { $("exportNote").textContent = "Downloads aren't available in this view."; return; }
+  try { await downloads.save({ filename, data: blob }); $("exportNote").textContent = "Saved " + filename; }
+  catch (err) { $("exportNote").textContent = err?.code === "declined" ? "Download cancelled." : "Couldn't save: " + (err?.message || err); }
+};
+
+fetch("./src/sample.png").then((r) => r.blob()).then((b) => loadBlob(b, "vitality"));
+</script>
