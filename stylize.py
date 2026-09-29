@@ -21,7 +21,9 @@ def shade_color(rgb, f):
     f = f[..., None]
     c = np.clip(rgb / 255, 1e-4, 1)
     # Light colours (yellow, lime) need deeper shadows than rich ones (orange, red) to read as metal.
-    k = 0.4 + 0.8 * c.mean(-1, keepdims=True)
+    # The second-strongest channel separates them: ~1 for yellow, ~0 for pure red.
+    second = np.sort(c, axis=-1)[..., 1:2]
+    k = 0.5 + 0.9 * second
     dark = c ** (1 + 1.6 * np.clip(1 - f, 0, None)) * np.minimum(f, 1) ** k
     # Highlights brighten and drift slightly towards white.
     lit = np.clip(c * f, 0, 1)
@@ -29,15 +31,36 @@ def shade_color(rgb, f):
     return 255 * np.where(f < 1, dark, lit)
 
 
+def knockout(im, dark=False, thin_dark=0.0, light=None):
+    """Turn parts of a flat logo into holes, the way the style treats linework and white areas.
+
+    dark:      every dark pixel becomes a hole (line-art logos).
+    thin_dark: only dark strokes thinner than this fraction of the logo size become holes,
+               so thin outlines turn into cut lines while thick dark text/rings stay filled.
+    light:     pixels brighter than this (0-255) become holes (white backgrounds, pale stripes).
+    """
+    arr = np.array(im)
+    opaque = arr[..., 3] > 128
+    lum = arr[..., :3].astype(float).mean(-1)
+    holes = np.zeros(opaque.shape, bool)
+    is_dark = opaque & (lum < 90)
+    if dark:
+        holes |= is_dark
+    if thin_dark > 0:
+        r = max(1, round(thin_dark * max(im.size) / 2))
+        disk = np.hypot(*np.mgrid[-r:r + 1, -r:r + 1]) <= r
+        holes |= is_dark & ~ndimage.binary_opening(is_dark, disk)
+    if light is not None:
+        holes |= opaque & (lum > light)
+    arr[holes, 3] = 0
+    return Image.fromarray(arr, "RGBA")
+
+
 def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
-             sheen=0.12, blend=0.0, knockout_dark=False):
+            sheen=0.12, blend=0.0, knockout_dark=False, knockout_thin_dark=0.0,
+            knockout_light=None, tint=None, split_colors=False):
     rng = np.random.default_rng(seed)
-    im = src.convert("RGBA")
-    if knockout_dark:
-        # Treat dark linework as holes, so line-art logos become solid shapes with cut-outs.
-        arr = np.array(im)
-        arr[arr[..., :3].astype(float).mean(-1) < 90, 3] = 0
-        im = Image.fromarray(arr, "RGBA")
+    im = knockout(src.convert("RGBA"), knockout_dark, knockout_thin_dark, knockout_light)
 
     # Padding so the outline never touches the canvas edge.
     pad = int(max(im.size) * 0.03)
@@ -55,8 +78,23 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
     solid = a[..., 3] > 250
     idx = ndimage.distance_transform_edt(~solid, return_distances=False, return_indices=True)
     rgb = rgb[idx[0], idx[1]]
+    if split_colors:
+        # Cut a thin line wherever two different colours touch, so each colour region
+        # becomes its own piece with its own outline and bevel.
+        sm = np.dstack([ndimage.gaussian_filter(rgb[..., c], 1.0 * SS) for c in range(3)])
+        grad = sum(np.hypot(ndimage.sobel(sm[..., c], 0), ndimage.sobel(sm[..., c], 1)) for c in range(3))
+        edge = grad > 250  # well above the soft ramps inside a single colour
+        # Ignore the soft band just inside outer edges, where colours bleed from the background.
+        edge &= ndimage.distance_transform_edt(inside) > 4 * SS
+        edge = ndimage.binary_closing(edge, iterations=SS)
+        inside &= ~ndimage.binary_dilation(edge, iterations=SS)
+        inside = ndimage.binary_opening(inside, iterations=SS)
     if color is not None:
         rgb[:] = color
+    if tint is not None:
+        # Recolour to one hue but keep the source's light/dark structure as shades.
+        lum = rgb.mean(-1) / 255
+        rgb = shade_color(np.broadcast_to(tint, rgb.shape), 0.92 + 0.35 * lum)
     if blend > 0:
         # Soften hard colour splits into smooth gradients (fraction of logo size).
         # Weighted by saturation so white/grey pieces pick up the colours around them.
@@ -66,6 +104,11 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
         rgb = np.dstack(num) / ndimage.gaussian_filter(sat, sigma)[..., None]
 
     px = SS * size / 1500  # all sizes below are tuned for a 1500px output
+    # Drop specks: tiny slivers left over from knockouts and colour splits.
+    lab, n = ndimage.label(inside)
+    if n:
+        areas = ndimage.sum(inside, lab, range(1, n + 1))
+        inside = np.isin(lab, 1 + np.nonzero(areas >= (14 * px) ** 2)[0])
     d_in = ndimage.distance_transform_edt(inside)
     d_out = ndimage.distance_transform_edt(~inside)
     sdf = d_in - d_out  # positive inside
@@ -95,7 +138,11 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
     col = col * lum[..., None] + 90 * specks[..., None] * (rgb / 255)
 
     # Bevel: chamfer band inside the edge, lit from the top-left.
-    chamfer = bevel * px
+    # Thin strokes get a narrower bevel so they aren't swallowed by it.
+    chamfer_max = bevel * px
+    reach = int(2 * chamfer_max) | 1
+    half_width = ndimage.maximum_filter(d_in, size=reach)
+    chamfer = np.clip(0.5 * half_width, 2.5 * px, chamfer_max)
     gy, gx = np.gradient(ndimage.gaussian_filter(d_in, 1.5 * px))
     norm = np.hypot(gx, gy) + 1e-6
     # Gradient points inward; the face normal points outward.
@@ -135,6 +182,12 @@ if __name__ == "__main__":
     p.add_argument("--sheen", type=float, default=0.12, help="strength of diagonal light bands")
     p.add_argument("--blend", type=float, default=0.0, help="smooth hard colour splits, e.g. 0.08")
     p.add_argument("--knockout-dark", action="store_true", help="turn dark linework into holes")
+    p.add_argument("--knockout-thin-dark", type=float, default=0.0,
+                   help="turn dark strokes thinner than this fraction of logo size into holes, e.g. 0.015")
+    p.add_argument("--knockout-light", type=float, help="turn pixels brighter than this (0-255) into holes")
+    p.add_argument("--tint", type=hex_rgb, help="recolour to one hue, keeping light/dark shades")
+    p.add_argument("--split-colors", action="store_true", help="draw outlines between touching colours")
     args = p.parse_args()
     stylize(Image.open(args.input), args.size, args.color, args.seed, args.bevel, args.bevel_strength,
-            args.sheen, args.blend, args.knockout_dark).save(args.output)
+            args.sheen, args.blend, args.knockout_dark, args.knockout_thin_dark,
+            args.knockout_light, args.tint, args.split_colors).save(args.output)
