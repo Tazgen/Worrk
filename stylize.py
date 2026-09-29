@@ -58,7 +58,7 @@ def knockout(im, dark=False, thin_dark=0.0, light=None):
 
 def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
             sheen=0.12, blend=0.0, knockout_dark=False, knockout_thin_dark=0.0,
-            knockout_light=None, tint=None, split_colors=False):
+            knockout_light=None, tint=None, split_colors=False, detail_scale=None):
     rng = np.random.default_rng(seed)
     im = knockout(src.convert("RGBA"), knockout_dark, knockout_thin_dark, knockout_light)
 
@@ -66,6 +66,8 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
     pad = int(max(im.size) * 0.03)
     canvas = Image.new("RGBA", (im.width + 2 * pad, im.height + 2 * pad), (0, 0, 0, 0))
     canvas.paste(im, (pad, pad))
+    # `size` is the longest side of the output. Outline, bevel and grain are tuned for a
+    # 1500px logo; `detail_scale` overrides that for wide artwork like lettering.
     scale = size * SS / max(canvas.size)
     W, H = round(canvas.width * scale), round(canvas.height * scale)
     big = canvas.resize((W, H), Image.LANCZOS)
@@ -103,7 +105,7 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
         num = [ndimage.gaussian_filter(rgb[..., c] * sat, sigma) for c in range(3)]
         rgb = np.dstack(num) / ndimage.gaussian_filter(sat, sigma)[..., None]
 
-    px = SS * size / 1500  # all sizes below are tuned for a 1500px output
+    px = SS * (size / 1500 if detail_scale is None else detail_scale)
     # Drop specks: tiny slivers left over from knockouts and colour splits.
     lab, n = ndimage.label(inside)
     if n:

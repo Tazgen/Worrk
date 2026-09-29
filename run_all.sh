@@ -25,3 +25,7 @@ logos/monkey.png output/monkey.png --knockout-thin-dark 0.014 --split-colors
 logos/beaver.png output/beaver.png
 logos/s2.png output/s2.png --knockout-light 200 --color #C8CDD2
 LIST
+
+# Lettering logos for teams without one: <text> <output> [textlogo.py options]
+python3 textlogo.py BIG output/text_big.png
+python3 textlogo.py MYT output/text_myt.png --tracking -0.03
