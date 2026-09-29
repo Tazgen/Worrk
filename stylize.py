@@ -16,9 +16,28 @@ def hex_rgb(s):
     return np.array([int(s[i:i + 2], 16) for i in (0, 2, 4)], float)
 
 
-def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30):
+def shade_color(rgb, f):
+    """Darken/lighten by factor f the way foil does: shadows get richer, not greyer."""
+    f = f[..., None]
+    c = np.clip(rgb / 255, 1e-4, 1)
+    # Light colours (yellow, lime) need deeper shadows than rich ones (orange, red) to read as metal.
+    k = 0.4 + 0.8 * c.mean(-1, keepdims=True)
+    dark = c ** (1 + 1.6 * np.clip(1 - f, 0, None)) * np.minimum(f, 1) ** k
+    # Highlights brighten and drift slightly towards white.
+    lit = np.clip(c * f, 0, 1)
+    lit = lit + (1 - lit) * np.clip((f - 1) * 0.4, 0, 0.5)
+    return 255 * np.where(f < 1, dark, lit)
+
+
+def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30,
+             sheen=0.12, blend=0.0, knockout_dark=False):
     rng = np.random.default_rng(seed)
     im = src.convert("RGBA")
+    if knockout_dark:
+        # Treat dark linework as holes, so line-art logos become solid shapes with cut-outs.
+        arr = np.array(im)
+        arr[arr[..., :3].astype(float).mean(-1) < 90, 3] = 0
+        im = Image.fromarray(arr, "RGBA")
 
     # Padding so the outline never touches the canvas edge.
     pad = int(max(im.size) * 0.03)
@@ -38,17 +57,31 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30):
     rgb = rgb[idx[0], idx[1]]
     if color is not None:
         rgb[:] = color
+    if blend > 0:
+        # Soften hard colour splits into smooth gradients (fraction of logo size).
+        # Weighted by saturation so white/grey pieces pick up the colours around them.
+        sigma = blend * max(W, H)
+        sat = (rgb.max(-1) - rgb.min(-1)) / 255 * inside + 1e-3
+        num = [ndimage.gaussian_filter(rgb[..., c] * sat, sigma) for c in range(3)]
+        rgb = np.dstack(num) / ndimage.gaussian_filter(sat, sigma)[..., None]
 
     px = SS * size / 1500  # all sizes below are tuned for a 1500px output
     d_in = ndimage.distance_transform_edt(inside)
     d_out = ndimage.distance_transform_edt(~inside)
     sdf = d_in - d_out  # positive inside
 
-    # Vertical gradient: bright top, darkest around 75%, slight lift at the bottom.
-    ys = np.nonzero(inside.any(1))[0]
-    t = np.clip((np.arange(H) - ys[0]) / max(1, ys[-1] - ys[0]), 0, 1)
-    ramp = np.interp(t, [0, 0.3, 0.75, 1], [0.90, 0.80, 0.62, 0.66])[:, None, None]
-    col = rgb * ramp
+    # Diagonal gradient, lit from the top-left: bright top-left, darkest around 75%,
+    # slight lift in the far bottom-right corner.
+    yy, xx = np.mgrid[0:H, 0:W].astype(float)
+    proj = 0.55 * xx + 0.83 * yy
+    lo, hi = proj[inside].min(), proj[inside].max()
+    t = np.clip((proj - lo) / max(1.0, hi - lo), 0, 1)
+    ramp = np.interp(t, [0, 0.3, 0.75, 1], [1.18, 1.0, 0.72, 0.76])
+    # Sheen: soft light bands across the diagonal, warped so they don't look ruled.
+    warp = ndimage.gaussian_filter(rng.standard_normal((H // 8 + 1, W // 8 + 1)), max(H, W) / 8 * 0.08)
+    warp = ndimage.zoom(warp / (warp.std() + 1e-9), 8, order=1)[:H, :W]
+    bands = np.sin(2 * np.pi * (1.33 * (t + 0.05 * warp) - 0.15))
+    col = shade_color(rgb, ramp * (1 + sheen * bands))
 
     # Grain: fine noise + soft mottling + sparse bright specks.
     fine = ndimage.gaussian_filter(rng.standard_normal((H, W)), 0.9 * px)
@@ -58,7 +91,7 @@ def stylize(src, size=1500, color=None, seed=0, bevel=20, bevel_strength=0.30):
     specks = (rng.random((H, W)) > 0.9994).astype(float)
     specks = ndimage.gaussian_filter(specks, 1.2 * px)
     specks /= specks.max()
-    lum = 1 + 0.045 * fine + 0.025 * mottle
+    lum = 1 + 0.045 * fine + 0.010 * mottle
     col = col * lum[..., None] + 90 * specks[..., None] * (rgb / 255)
 
     # Bevel: chamfer band inside the edge, lit from the top-left.
@@ -99,5 +132,9 @@ if __name__ == "__main__":
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--bevel", type=float, default=20, help="bevel width in px at 1500px output")
     p.add_argument("--bevel-strength", type=float, default=0.30)
+    p.add_argument("--sheen", type=float, default=0.12, help="strength of diagonal light bands")
+    p.add_argument("--blend", type=float, default=0.0, help="smooth hard colour splits, e.g. 0.08")
+    p.add_argument("--knockout-dark", action="store_true", help="turn dark linework into holes")
     args = p.parse_args()
-    stylize(Image.open(args.input), args.size, args.color, args.seed, args.bevel, args.bevel_strength).save(args.output)
+    stylize(Image.open(args.input), args.size, args.color, args.seed, args.bevel, args.bevel_strength,
+            args.sheen, args.blend, args.knockout_dark).save(args.output)
