@@ -14,4 +14,9 @@ logos/w_logo.png output/w_logo.png --blend 0.10
 logos/fut.png output/fut.png --color #E8102E
 logos/mancity.png output/mancity.png --knockout-light 185 --knockout-thin-dark 0.014 --tint #5BA3DA --split-colors
 logos/gentlemates.png output/gentlemates.png --color #E7A6E6
+logos/cloud9.png output/cloud9.png
+logos/dignitas.png output/dignitas.png --knockout-dark
+logos/geng.png output/geng.png
+logos/kru.png output/kru.png
+logos/pink_s.png output/pink_s.png
 LIST
